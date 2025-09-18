@@ -1,0 +1,29 @@
+Selected 2 checkpoint(s):
+  - checkpoints/mazurka_h5_22050_S86_F3/mazurka_h5_22050_S86_F3_epoch29-valloss1.5129.ckpt
+  - checkpoints/mazurka_h5_22050_S86_F3/last.ckpt
+
+==== Evaluating checkpoints/mazurka_h5_22050_S86_F3/mazurka_h5_22050_S86_F3_epoch29-valloss1.5129.ckpt ====
+Parameters (BeatThis core): trainable=20,251,696 total=20,251,712
+Averaged metrics:
+  F-measure_beat: 0.8321
+  Cemgil_beat: 0.6912
+  CMLt_beat: 0.6065
+  AMLt_beat: 0.6065
+  F-measure_downbeat: 0.5721
+  Cemgil_downbeat: 0.4758
+  CMLt_downbeat: 0.3208
+  AMLt_downbeat: 0.3209
+
+==== Evaluating checkpoints/mazurka_h5_22050_S86_F3/last.ckpt ====
+Parameters (BeatThis core): trainable=20,251,696 total=20,251,712
+Averaged metrics:
+  F-measure_beat: 0.8347
+  Cemgil_beat: 0.6907
+  CMLt_beat: 0.6539
+  AMLt_beat: 0.6539
+  F-measure_downbeat: 0.6075
+  Cemgil_downbeat: 0.5014
+  CMLt_downbeat: 0.4823
+  AMLt_downbeat: 0.4825
+
+Saved summary CSV: logs/summary_mazurka_h5_22050_S86_F3.csv

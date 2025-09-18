@@ -1,0 +1,22 @@
+# PyTorch stack (GPU, CUDA 12.1 runtime)
+torch==2.3.1
+torchaudio==2.3.1
+# torchvision==0.18.1 
+
+# Deep learning utilities
+pytorch-lightning==2.5.4
+einops==0.8.0
+rotary-embedding-torch==0.6.4
+torchmetrics==1.4.1
+tqdm==4.66.4
+wandb==0.17.9
+
+# Audio/MIR ecosystem
+librosa==0.10.2
+soxr==0.3.7
+soundfile
+audioread
+mir_eval
+madmom==0.16.1
+h5py
+pandas

@@ -1,0 +1,51 @@
+##
+
+## Data PreProcess
+
+Error Found:
+ 1) MazurkaBL-master `M41-1` has an error. Its performance ID (pid) `9070b-01` [X] should be corrected to `9070b-09`.
+
+    Affected Files:
+    - MazurkaBL-master/beat_time/M41-1beat_time.csv
+    - MazurkaBL-master/beat_dyn/M41-1beat_dynNORM.csv
+
+    This issue is automatically corrected using the `fix_mazurka_pid_column` function defined in `pack_h5.py`.
+
+# Create and activate Conda env with CPU-compatible PyTorch 2.2 (which includes MPS for Mac), then Add the pip-only packages
+```
+conda create -n dyn_mac python=3.10 numpy pandas h5py "pytorch=2.2.*" "torchaudio=2.2.*" -c pytorch -c conda-forge
+conda activate dyn_mac
+pip install hydra-core omegaconf wandb einops librosa mido tqdm cython
+pip install "numpy<2"
+pip install seaborn
+pip install madmom
+```
+
+# Tested Configs
+
+## Experiment Settings and Resource Usage
+
+| Parameter                 | Value in Trial 1               |
+|---------------------------|--------------------------------|
+| `batch_size`              | 4                              |
+| `input_type`              | `"audio"`                      |
+| `model_name`              | `"Dual_Dynamic_HPT_v2"`        |
+| `targets`                 | `["dynamic", "change_point"]`  |
+| `loss_type`               | `"ce_dynamic_gt+change_point"` |
+| `audio_feature`           | `"logmel"`                     |
+| `midi_feature`            | `"masked_velocity"`            |
+| `dynamic_classes`         | 5                              |
+| `dynamic_norm`            | `False`                        |
+| `dynamic_mask`            | `"change_point"`               |
+| `dynamic_mask_radius`     | 1                              |
+| `segment_seconds`         | 60.0                           |
+| `segment_hop_seconds`     | 30.0                           |
+| `sample_rate`             | 16000                          |
+| `fft_size`                | 1024                           |
+| `frames_per_second`       | 40                             |
+| **GPU Usage**             | RTX 3090 @ ~14.6 GB            |
+| **RAM Usage**             | ~15GB                          |
+
+## Experiment Comments
+1. when random_seed = 42, training loss over-range from 5k to 20k iter (reduce_lr from 10k)
+2. change seed to 1234 run again

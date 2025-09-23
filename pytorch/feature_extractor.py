@@ -52,16 +52,13 @@ Our Development:
     Fix 75% overlap for the log-mel feature, same as the librosa defaults.
     → sample_rate=16000, fft_size=512,  fps=60     (~75% ovarlap)
 """
-import h5py
 import torch
 import torch.nn as nn
-import argparse
-import torch
+import torchaudio
 import numpy as np
 import pandas as pd
-import os
+import os, time, argparse, h5py
 from typing import Literal
-import torchaudio
 from mosqito.sq_metrics import loudness_zwtv
 import matplotlib.pyplot as plt
 from matplotlib.ticker import MaxNLocator
@@ -107,7 +104,7 @@ class PsychoFeatureExtractor(nn.Module):
       - wav: (B, T)  audio waveform in time samples
 
     Output (depends on return_mode):
-      - bark: (B, C, F) Bark bands loudness in dB-SPL
+      - bark: (B, C, F) Bark bands loudness in dB
       - sone: (B, C, F) Bark bands loudness in sones
       - ntot: (B, F)    Total avergae bank bands loudness in sones (avg per frame)
 
@@ -182,7 +179,6 @@ class PsychoFeatureExtractor(nn.Module):
             # ntot_norm = ntot / (ntot.max(dim=1, keepdim=True).values + 1e-9)
             return ntot # ntot_norm
     
-    # -------------------------------------------------------------
     def forward(self, wav: torch.Tensor):
         wav = wav * (10 ** (self.db_max/20))                        # 1) Scale waveform to max dB range, B, T = wav.shape
         spec = torch.stft(wav, n_fft=self.fft_size,                 # 2) Compute STFT > complex spectrogram
@@ -239,7 +235,6 @@ class LogMelExtractor(nn.Module):
         return log_mel_spec
 
 
-
 # --- Unified MoSQIToExtractor ---
 class MoSQIToExtractor(nn.Module):
     """
@@ -271,58 +266,72 @@ class MoSQIToExtractor(nn.Module):
             times.append(time)
         return torch.stack(results), (self.freq_bins if self.mode=="bark" else None), times[0]
 
-# ----------------------------------------------------------------------------------------------
-# This __main__ block is for CLI testing / debugging.
-# In practice, import and use the classes above directly to PyTorch Dataset or Model.
-# ----------------------------------------------------------------------------------------------
 
-# Visualise the feature in csv for debugging
+# ---------- This __main__ block is for data visualization --------------------------
+# In practice, import and use the classes above directly to PyTorch Dataset or Model.
 def save_feature_csv(features, times, columns, output_csv_path):
     os.makedirs(os.path.dirname(output_csv_path), exist_ok=True)
     df = pd.DataFrame(features, columns=columns)
     df.insert(0, "time", times)
     df.to_csv(output_csv_path, index=False, float_format='%.7f')
-    print(f"Saved feature CSV to {output_csv_path}")
+    print(f"Saved CSV {output_csv_path}")
 
 def save_feature_plot(features, times, mode, output_png_path,
-    t_start=None, t_end=None, duration=None, figsize=(6,3.4), dpi=200):
-    if any(v is not None for v in [t_start, t_end, duration]):
-        if duration is not None and t_end is None:
-            t_start = 0.0 if t_start is None else t_start
-            t_end = t_start + duration
-        t0 = max(times[0], t_start if t_start is not None else times[0])
-        t1 = min(times[-1], t_end if t_end is not None else times[-1])
-        i0, i1 = np.searchsorted(times, t0, "left"), np.searchsorted(times, t1, "right")
+        t_start=None, t_end=None, duration=None, figsize=(6,3.4), dpi=200):
+    if output_png_path is None: return
+    if duration and not t_end:
+        t_start = 0.0 if t_start is None else t_start
+        t_end = t_start + duration
+    if t_start or t_end:
+        t0_, t1_ = t_start or times[0], t_end or times[-1]
+        i0,i1 = np.searchsorted(times,t0_,"left"), np.searchsorted(times,t1_,"right")
         features, times = features[i0:i1], times[i0:i1]
-    unit_map = {"bark":"dB-SPL", "sone":"sones", "ntot":"sones", "logmel":"dB", "mosqito_sone":"sones", "mosqito_bark":"sones"}
-    unit = unit_map.get(mode, "")
+    unit = {"bark":"dB","sone":"sones","ntot":"sones",
+            "logmel":"dB","mosqito_sone":"sones"}.get(mode,"")
     fig = plt.figure(figsize=figsize)
     f = features if features.ndim==2 else features.reshape(-1,1)
     if f.shape[1]==1:
-        plt.plot(times, f[:,0], lw=1)
-        plt.xlabel("Time (s)"); plt.ylabel(f"{mode} ({unit})" if unit else mode)
-        plt.title(f"{mode} over time"); plt.grid(alpha=0.3)
+        plt.plot(times,f[:,0]); plt.xlabel("Time (s)"); plt.ylabel(f"{mode} ({unit})" if unit else mode)
     else:
-        im = plt.imshow(f.T, aspect="auto", origin="lower", extent=[times[0], times[-1], 0, f.shape[1]], interpolation="nearest", rasterized=True,
-            vmin=(np.percentile(f, 10) if mode == "logmel" else None),
-            vmax=(np.percentile(f, 99.99) if mode in ["sone", "bark"] else None))    
-        plt.xlabel("Time (s)")
-        ylab = {"logmel":"Mel bins", "bark":"Bark bands", "sone":"Bark bands", "mosqito_bark":"Bark bands"}.get(mode,"Channels")
-        plt.ylabel(f"{ylab} (N={f.shape[1]})")
-        plt.colorbar(im).set_label(unit if unit else "amplitude")
+        im=plt.imshow(f.T,aspect="auto", origin="lower",
+                      extent=[times[0],times[-1],0,f.shape[1]],
+                      interpolation="nearest", rasterized=True,
+                      vmin=(np.percentile(f,10) if mode=="logmel" else None),
+                      vmax=(np.percentile(f,99.99) if mode in ["sone","bark"] else None))
+        plt.xlabel("Time (s)"); plt.ylabel("Channels"); plt.colorbar(im).set_label(unit or "amplitude")
         plt.gca().yaxis.set_major_locator(MaxNLocator(integer=True))
-        plt.title(f"{mode} spectrogram-like visualization")
     plt.tight_layout()
     os.makedirs(os.path.dirname(output_png_path), exist_ok=True)
-    plt.savefig(output_png_path, dpi=dpi); plt.close(fig)
-    print(f"Saved feature plot to {output_png_path}")
+    plt.savefig(output_png_path,dpi=dpi); plt.close(fig)
+    print(f"Saved plot {output_png_path}")
 
+def compare_sones_diff_methods(csv_files, titles):
+    """
+    - PyTorch (ours, origin BSSL, up to 24 Bark-bands)
+    - Paper2024 (used MoSQITo, high-res variant BSSL, up to 240 bins)
+    - Matlab2007 (ma_sone, origin BSSL, up to 24 Bark-bands)
+    - Paper2018 (used MATLAB2007, origin BSSL, up to 24 Bark-bands)
+    """
+    assert len(csv_files) == len(titles) and len(csv_files) >= 2
+    dfs = [pd.read_csv(f) for f in csv_files]
+    fig, axes = plt.subplots(len(csv_files), 1, figsize=(12, 2.5 * len(csv_files)), sharex=True)
+    if len(csv_files) == 1: axes = [axes]
+    for ax, df, title in zip(axes, dfs, titles):
+        x, y = df.iloc[:, 0].values, df.iloc[:, 1].values
+        ax.plot(x, y, lw=1)
+        ax.set_title(title)
+        ax.set_ylabel('Ntot')
+        ax.grid(True)
+    axes[-1].set_xlabel('Time (s)')
+    plt.tight_layout(); plt.show()
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Extract Bark, Log-Mel, or MoSQITo Sones from .h5 waveform.")
     parser.add_argument("h5_input_path", type=str, help="Path to the input .h5 file")
     parser.add_argument("output_csv_path", type=str, help="Path to the output .csv file")
-    parser.add_argument("--mode", type=str, default="sone", choices=["sone", "bark", "ntot", "logmel", "mosqito_sone", "mosqito_bark"], help="Feature to extract: sone | ntot | logmel | mosqito_sone | mosqito_bark")
+    parser.add_argument("--mode", type=str, default="sone",
+                        choices=["sone", "bark", "ntot", "logmel", "mosqito_sone"],
+                        help="Feature to extract: sone | ntot | logmel | mosqito_sone")
     parser.add_argument("--sample_rate", type=int, default=44100, help="Waveform sample rate (default: 44100)")
     parser.add_argument("--fft_size", type=int, default=1024, help="FFT size (default: 1024)")
     parser.add_argument("--frames_per_second", type=float, default=86, help="Frames per second for feature extraction")
@@ -332,46 +341,30 @@ if __name__ == "__main__":
     # Load waveform
     with h5py.File(args.h5_input_path, 'r') as hf:
         waveform = hf['waveform'][:].astype(np.float32) / 32768.0
-
     wav_tensor = torch.tensor(waveform, dtype=torch.float32).unsqueeze(0)
 
+    # Start counting time for the feature extractor
+    _t0 = time.perf_counter()
     if args.mode == "logmel":
-        extractor = LogMelExtractor(
-            sample_rate=args.sample_rate,
-            fft_size=args.fft_size,
-            frames_per_second=args.frames_per_second
-        )
+        extractor = LogMelExtractor(sample_rate=args.sample_rate, fft_size=args.fft_size, frames_per_second=args.frames_per_second)
         features = extractor(wav_tensor).squeeze(0).numpy().T
         hop_duration = extractor.mel_spectrogram.hop_length / extractor.mel_spectrogram.sample_rate
         times = np.arange(features.shape[0]) * hop_duration
         columns = [f"mel_{i+1}" for i in range(features.shape[1])]
-
     elif args.mode == "mosqito_sone":
         extractor = MoSQIToExtractor(sample_rate=args.sample_rate, mode="sone")
         features, _, times = extractor(wav_tensor)
         features = features.squeeze(0).detach().cpu().numpy()
         times = np.array(times)
         columns = ["mosqito_sone"]
-
-    elif args.mode == "mosqito_bark":
-        extractor = MoSQIToExtractor(sample_rate=args.sample_rate, mode="bark")
-        features, freqs, times = extractor(wav_tensor)
-        features = features.squeeze(0).detach().cpu().numpy()
-        times = np.array(times)
-        columns = [f"mosqito_bark_{int(f)}Hz" for f in freqs]
-        # columns = [f"bark_{i+1}" for i in range(features.shape[1])]
-
-    else:
-        extractor = PsychoFeatureExtractor(
-            sample_rate=args.sample_rate,
-            fft_size=args.fft_size,
-            frames_per_second=args.frames_per_second,
-            return_mode=args.mode,
-        )
+    else: # Our PyTorch implementaion of BSSL extractor
+        extractor = PsychoFeatureExtractor(sample_rate=args.sample_rate, fft_size=args.fft_size, frames_per_second=args.frames_per_second, return_mode=args.mode)
         features = extractor(wav_tensor).squeeze(0).numpy().T if args.mode not in ["ntot"] else extractor(wav_tensor).squeeze(0).numpy()
         hop_duration = extractor.hop_size / extractor.sample_rate
         times = np.arange(features.shape[0]) * hop_duration
         columns = [f"{args.mode}_{i+1}" for i in range(features.shape[1])] if args.mode not in ["ntot"] else [args.mode]
+    # End the time counting of feature extractor
+    print(f"Total time: {time.perf_counter() - _t0:.3f}s")
 
     save_feature_csv(features, times, columns, args.output_csv_path)
     save_feature_plot(features, times, args.mode, args.plot_path, t_start=10, duration=50)

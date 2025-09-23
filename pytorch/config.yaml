@@ -1,21 +1,20 @@
 wandb:
   project: "2025_icassp"
-  # name: "${feature.sample_rate}-${feature.audio_feature}-${exp.model_name}-class${feature.dynamic_classes}-sec${feature.segment_seconds}-fft${feature.fft_size}-fps${feature.frames_per_second}-lr${exp.learning_rate}"
   name: "${wandb.note}-${feature.audio_feature}-${exp.model_name}-${exp.targets}-fold${dataset.fold_index}"
   note: "ablation" # or "formal"
 
 exp:
-  # workspace: "./workspaces"
-  workspace: "/media/datadisk/home/22828187/zhanh/202505_dynest_data/workspaces"
+  workspace: "./workspaces"
+  # workspace: "/media/datadisk/home/22828187/zhanh/202505_dynest_data/workspaces"
   # workspace: "/media/mengh/SharedData/zhanh/202505_dynest_data/workspaces"
   random_seed: 86
   num_workers: 6
   cuda: true
   batch_size: 10
   mini_data: False
-
-  # === Epoch-based training ===
-  total_epochs: 36 #2          # total training epochs
+  # ---------------------------
+  # Training params
+  total_epochs: 120 #2          # total training epochs
   resume_epoch: 0               # resume from epoch checkpoint (epoch_N.pth)
   eval_epoch_interval: 8        # run evaluation every N epochs in train stage
   eval_batches: 20              # number of mini-batches per eval in the train stage
@@ -24,11 +23,13 @@ exp:
   use_adamw: True               # False to use Adam, True to use AdamW
   learning_rate: 3e-4           #2e-3 #1e-4
   decay: True
+  # ---------------------------
+  # Model setup
   input_type: "audio"           # "audio", "midi", "both" - sheetmusic handler entrance
   model_name: "MultiTaskCNN"    # "SingleCNN"
   targets: ["dynamic","change_point","beat","downbeat"] # default multitask CNN, ["dynamic"] or ["beat"] for SingleCNN
-
-  # ===== Binary head loss & imbalance handling =====
+  # ---------------------------
+  # Loss function components
   dynamic_mask: "beat"                    # beat-wise is in principle, optional development of downbeat, measure, change_point wise.
   dynamic_loss: "ce_dynamic"              # "ce" or "mse" or "mae"  
   beat_loss: "shift_tolerant_bce"         # "bce" | "shift_tolerant_bce" | "splitted_shift_tolerant_bce"
@@ -40,13 +41,17 @@ exp:
 
 
 feature:
-  audio_feature: "sone"             # logmel (128 bins) or sone (24 bins)
+  audio_feature: "sone"             # logmel (128 bins) or sone (BSSL up to 24 bins, 22 bins when fs=22.05kHz)
   midi_feature:  "masked_velocity"  # "mask_velocity" or "velocity" - for the sheetmusic handler, not for model train/test
   dynamic_classes: 5                # 5-level (mazurka) or 8-level (real-world) mapping
-  # === dataloader.py audio segmentation parameters ===
+  # ---------------------------
+  # dataloader.py params
   segment_seconds: 60 #120.0        # Segment duration in seconds
   segment_hop_seconds: 30 #60.0     # Segment slicing step size in seconds, must equal or smaller than segment_seconds
-  # === feature_extractor.py parameters ===
+  # seg_hop = seg_sec         >> no overlapping    >> we force this setting in evaluation.
+  # seg_hop = 50% of seg_sec  >> 50% overlapping   >> data agumentation in training.
+  # ---------------------------
+  # feature_extractor.py params
   sample_rate: 22050                # Audio sampling rate in Hz
   fft_size: 1024                    # FFT size for STFT (fft window length)
   frames_per_second: 50             # Determine the hop size for STFT (define fft window overlap ratio)
@@ -54,14 +59,12 @@ feature:
 
 
 cnn:
-  latent_dim: 8
-  fc_dropout: 0.2
+  latent_dim: 8                     # share latent dimension
+  fc_dropout: 0.2                   # CNN dropout rate
   temporal_scale: [5,5]             # use [5,5] for proposed multitask CNN; use [3,3] reproduce original ICASSP2023 Single-task CNN, but worse performance
-
-# ==== 新增结构开关 ====
-  use_mmoe: true
-  n_experts: 8
-  export_mmoe_heatmap: false        # 导出 MMoE 专家门控热力图（inference 阶段生效）
+  use_mmoe: true                    # Use MMoE or not
+  n_experts: 8                      # Num of MMoE share experts
+  export_mmoe_heatmap: false        # MMoE experts' heatmap, for analysis in inference stage
 
 
 dataset:
@@ -81,14 +84,15 @@ dataset:
     # Some pids' annotations are not reliable (High Gradient in training), hence excluded
     # Use "null" to disable this during the evaluation process.
     exclude_pids: null
-      # - "mazurka17-4/pid9058-13.h5"   # 3
-      # - "mazurka33-4/pid9080-08.h5"   # 3
-      # - "mazurka17-4/pid9173-18.h5"   # 2
-      # - "mazurka56-3/pid9063b-10.h5"  # 2
-      # - "mazurka50-3/pid9085-05.h5"   # 2
-      # - "mazurka33-4/pid9068-15.h5"   # 1
-      # - "mazurka33-4/pid9125-13.h5"   # 1
-      # - "mazurka33-4/pid9057f-02.h5"  # 1
-      # - "mazurka17-4/pid9161-12.h5"   # 1
-      # - "mazurka17-4/pid9050-13.h5"   # 1
-      # - "mazurka17-4/pid9170-13.h5"   # 1
+    # exclude_pids:
+    #   - "mazurka17-4/pid9058-13.h5"   # 3
+    #   - "mazurka33-4/pid9080-08.h5"   # 3
+    #   - "mazurka17-4/pid9173-18.h5"   # 2
+    #   - "mazurka56-3/pid9063b-10.h5"  # 2
+    #   - "mazurka50-3/pid9085-05.h5"   # 2
+    #   - "mazurka33-4/pid9068-15.h5"   # 1
+    #   - "mazurka33-4/pid9125-13.h5"   # 1
+    #   - "mazurka33-4/pid9057f-02.h5"  # 1
+    #   - "mazurka17-4/pid9161-12.h5"   # 1
+    #   - "mazurka17-4/pid9050-13.h5"   # 1
+    #   - "mazurka17-4/pid9170-13.h5"   # 1

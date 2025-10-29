@@ -1,15 +1,15 @@
 # Piano Dynamic Estimation
 This repo corresponding to our submitted paper to ICASSP2026.
-- Joint Estimation of Piano Dynamics and Metrical Structure with a Multi-task Multi-Scale Network [(PDF)](./figures/ICASSP2026_Dynest.pdf)
+- [Joint Estimation of Piano Dynamics and Metrical Structure with a Multi-task Multi-scale Network (PDF)](https://www.arxiv.org/abs/2510.18190)
 
-Our proposed multitask model can estimate piano dynamics, change points, beats, and downbeats from audio at once. We are polishing our model's inference stage, currntly integrates with ["High-resolution Piano Transcription (TASLP2021)"](https://arxiv.org/abs/2010.01815) system, more AMT systems in progress.
+Our proposed multitask model can estimate piano dynamics, change points, beats, and downbeats from audio at once. We are polishing our model's inference stage, currntly integrates with "High-resolution Piano Transcription (TASLP2021)" system, more AMT systems in progress.
 
 <p align="center">
   <img src="./figures/1_user_case.jpg" alt="User case demo" width="720">
   <br><em>Figure 1: User case demonstration.</em>
 </p>
 
-We also made a faithful PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to provide Bark-scale specific loudness senation.
+We also made a PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to provide Bark-scale specific loudness (BSSL) senation based on "Zwicker 1999 method" (yielding a up to 24-dim feature). We found the BSSL outperformed the log-Mel in our tasks, with a 5x smaller feature dimension.
 
 [Environment Setup](#environment-setup) &middot;
 [Inference & Checkpoints](#inference-and-checkpoints) &middot;
@@ -37,7 +37,7 @@ This environment is for `Ubuntu 22.04 + CUDA 12.2 + RTX3090 24GiB`. Basically it
 ## Inference & Checkpoints
 Add predicted **dynamic markings** to an existing **or** AMT-transcribed score. Start with [`Inference.ipynb`](./Inference.ipynb).
 
-- We provide a **pretrained** multi-task, multi-scale checkpoint at [`workspace/checkpoint/`](./workspaces/checkpoints/) folder. This checkpoint is our **best pre-trained** model under the 5-fold protocol, selected for real-world inference. 
+- We provide a **pretrained** multi-task, multi-scale checkpoint at `workspaces/checkpoint/` folder. This checkpoint is our **best pre-trained** model under the 5-fold protocol, selected for real-world inference. 
 - More checkpoints (other folds in formal run OR ablation variants) are available in **checkpoints.tar.gz** (Google Drive Download).
 
 ## PsychoFeatureExtractor
@@ -48,11 +48,13 @@ We implemented this PsychoFeatureExtractor in PyTorch framwork, according to the
   <br><em>Figure 2: Bark-scale total loudness from different implementation.</em>
 </p>
 
-**The following content is for training**
+**NOTE: The following section is for training & reproduce**
 
 ## MazurkaBL Dataset
 
-To download the dataset, visit the github repo [MazurkaBL-master](https://github.com/katkost/MazurkaBL) to download the annotation files. Place this dataset at our [`workspace/Dataset/`](./workspaces/Dataset/) folder. The corresponding audio is available upon request (via email).
+To download the dataset, visit the github repo [MazurkaBL-master](https://github.com/katkost/MazurkaBL) to download the annotation files. You should request the author for the audio files. Place these dataset at our `workspaces/Dataset/` folder, and then doing the data cleanup we mentioned in **Data Preprocessing**.
+
+OR, you can [download our cleanup data here (Link)](https://drive.google.com/file/d/1AmvuvzJmBWDYZsDupLReh_uyBcQwmAEj/view?usp=sharing), and then pack_h5 with any sample_rate you want.
 
 ## Data Preprocessing
 
@@ -88,7 +90,7 @@ Here is the problem we found:
     ```
 
 ## Training & WandB
-Once the dataset is downloaded, and the data pre-processing done, you can follow our [`Train_Model.ipynb`](./Train_Model.ipynb) to start the model training. We are doing the 5-fold cross-validation, the data is split on the Mazurka opus to becomes 5 folds, these five `split.csv` files can be found on [`workspace/`](./workspaces/). To train with 5-fold:
+Once the dataset is downloaded, and the data pre-processing done, you can follow our `Train_Model.ipynb` to start the model training. We are doing the 5-fold cross-validation, the data is split on the Mazurka opus to becomes 5 folds, these five `split.csv` files can be found on `workspaces/` folder. To train with 5-fold:
 
 ```bash
 python pytorch/train.py wandb.note='formal latent8 mmoe8 5x5' exp.model_name=MultiTaskCNN dataset.run_all_folds=True
@@ -98,15 +100,15 @@ Or simple train in the first fold:
 ```bash
 python pytorch/train.py wandb.note='formal latent8 mmoe8 5x5' exp.model_name=MultiTaskCNN dataset.run_all_folds=False dataset.fold_index=0
 ```
-You can modify other settings in the [`pytorch/config.yaml`](./pytorch/config.yaml). Our training histroy and hyperparameter setting can be found in our [**open-available WandB workspace**](https://wandb.ai/zhanh-uwa/2025_icassp).
+You can modify other settings in the [`pytorch/config.yaml`](./pytorch/config.yaml). Our training histroy and hyperparameter setting can be found in our [**public available WandB Report**](https://api.wandb.ai/links/zhanh-uwa/fcsjrq07).
 
 ## Evaluation (Ours and Baselines)
-All results can be found on the [`eval_and_benchmarks`](./eval_and_benchmarks/) folder. Our models `SingleTaskCNN` and `MultitaskCNN` (formal name in paper is "multitask, multiscale network) results are:
+Our paper results can be found on the `eval_and_benchmarks/` folder. You can find our ”SingleTask“ and “Multitask” models‘ evaluation results from:
 
 - [`Eval_Singletask.ipynb`](./eval_and_benchmarks/Eval_Singletask.ipynb)
 - [`Eval_Multitask.ipynb`](./eval_and_benchmarks/Eval_Multitask.ipynb)
 
-Beat and downbeat tracking baselines results are obtained from their original implementation in GitHub: [TCN + DBN by Bock et al.(2020)](https://tempobeatdownbeat.github.io/tutorial/intro.html) and [Beat This by F. Foscarin et al. (2024)](https://github.com/CPJKU/beat_this). We retrain their model using their own implementation. You can find the training history with the evaluation results from:
+Beat and downbeat tracking baselines results are obtained from their original implementation in GitHub: [TCN + DBN by Bock et al.(2020)](https://tempobeatdownbeat.github.io/tutorial/intro.html) and [Beat This by F. Foscarin et al. (2024)](https://github.com/CPJKU/beat_this). We retrain their model using their implementation. You can find the training history with evaluation results from:
 
 - [`beat_tcn/Eval_BeatTCN_MazurkaBL.ipynb`](./eval_and_benchmarks/beat_tcn/Eval_BeatTCN_MazurkaBL.ipynb)
 - [`beat_this/Eval_BeatThis_MazurkaBL.ipynb`](./eval_and_benchmarks/beat_this/Eval_BeatThis_MazurkaBL.ipynb)

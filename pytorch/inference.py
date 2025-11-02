@@ -1,48 +1,21 @@
 """Song-level inference: segment -> predict -> stitch -> save H5."""
 
 from __future__ import annotations
-import argparse
-import csv
-import os
+import argparse, csv, os, h5py
 from typing import Dict, Tuple, Any, List
-
-import h5py
 import numpy as np
 import torch
-from omegaconf import OmegaConf
 from tqdm import tqdm
 
 from post_processor.dynamic_postproc import detect_change_point
 from post_processor.beat_postproc import Postprocessor
-from utils import int16_to_float32, parse_overrides_str, select_checkpoint
-from models_audioCNN import SingleCNN, MultiTaskCNN
+from utils import int16_to_float32, parse_overrides_str, select_checkpoint, load_model
 
 
 # ---------------- Helpers (cfg) ----------------
 def _fps(cfg) -> int: return int(getattr(cfg.feature, "frames_per_second", 50))
 def _sr(cfg) -> int: return int(getattr(cfg.feature, "sample_rate", 22050))
 def _seg_sec(cfg) -> float: return float(getattr(cfg.feature, "segment_seconds", 60))
-
-# ---------------- Model load ----------------
-_MODEL = {"SingleCNN": SingleCNN, "MultiTaskCNN": MultiTaskCNN}
-
-def _load_ckpt(path: str, device: torch.device):
-    try:  # fast path
-        return torch.load(path, map_location=device) 
-    except Exception:  # fallback
-        return torch.load(path, map_location=device, weights_only=False)
-
-def load_model(checkpoint_path: str, device: torch.device, overrides: Dict[str, Any] | None) -> Tuple[torch.nn.Module, OmegaConf]:
-    if not os.path.isfile(checkpoint_path): raise FileNotFoundError(checkpoint_path)
-    ckpt = _load_ckpt(checkpoint_path, device)
-    cfg = OmegaConf.create(ckpt["cfg"])
-    if overrides: cfg = OmegaConf.merge(cfg, OmegaConf.create(overrides))
-    name = str(getattr(cfg.exp, "model_name"))
-    if name not in _MODEL: raise ValueError(f"Unknown model_name: {name}")
-    model = _MODEL[name](cfg).to(device)
-    model.load_state_dict(ckpt["model"], strict=False)
-    model.eval()
-    return model, cfg
 
 
 # ---------------- Enframing / stitching ----------------

@@ -4,8 +4,8 @@ wandb:
   note: "ablation" # or "formal"
 
 exp:
-  workspace: "./workspaces"
-  # workspace: "/media/datadisk/home/22828187/zhanh/202505_dynest_data/workspaces"
+  # workspace: "./workspaces"
+  workspace: "/media/datadisk/home/22828187/zhanh/202509_bark_data/workspaces"
   # workspace: "/media/mengh/SharedData/zhanh/202505_dynest_data/workspaces"
   random_seed: 86
   num_workers: 6
@@ -48,8 +48,8 @@ feature:
   # dataloader.py params
   segment_seconds: 60 #120.0        # Segment duration in seconds
   segment_hop_seconds: 30 #60.0     # Segment slicing step size in seconds, must equal or smaller than segment_seconds
-  # seg_hop = seg_sec         >> no overlapping    >> we force this setting in evaluation.
-  # seg_hop = 50% of seg_sec  >> 50% overlapping   >> data agumentation in training.
+  # seg_hop = seg_sec       >> no overlapping    >> evaulation setting.
+  # seg_hop = 0.5x seg_sec  >> 50% overlapping   >> data agumentation in training.
   # ---------------------------
   # feature_extractor.py params
   sample_rate: 22050                # Audio sampling rate in Hz

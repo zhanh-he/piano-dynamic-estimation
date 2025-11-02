@@ -1,14 +1,12 @@
-import os
-import csv
+import os, csv, h5py, math
 import numpy as np
-import h5py
-import math
 try:
     # Relative import when used as a package
     from .utils import int16_to_float32, traverse_folder, data_5fold_split, data_random_split, pad_or_truncate_np
 except Exception:
     # Fallback for top-level execution
     from utils import int16_to_float32, traverse_folder, data_5fold_split, data_random_split, pad_or_truncate_np
+
 
 def pad_or_truncate(arr, target_length, axis=0, pad_value=0):
     """Alias to utils.pad_or_truncate_np (backward-compat)."""

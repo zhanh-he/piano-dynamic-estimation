@@ -1,4 +1,12 @@
 """
+Literature:
+- Pampalk "ma_sone.m" matlab toolbox (2007):
+    https://www.pampalk.at/ma/documentation.html
+- Joyti ISMIR2024 paper:   
+    https://arxiv.org/pdf/2410.20540
+- Beat This ISMIR2024 paper:
+    https://arxiv.org/abs/2407.21658
+
 Signal Processing Basics:
 - sample_rate: number of samples per second (e.g., 44100 Hz).
 - hop_size: step size (in samples) between frames.
@@ -10,51 +18,38 @@ Window Overlap:
   e.g., fft_size=1024, hop_size=256 → 75% overlap;
         fft_size=1024, hop_size=512 → 50% overlap.
 
-=============================== Literature ================================
-- Pampalk "ma_sone.m" matlab toolbox (2007):
-    https://www.pampalk.at/ma/documentation.html
-- Joyti ISMIR2024 paper:   
-    https://arxiv.org/pdf/2410.20540
-
 ==================== Joyti's ISMIR2024 FFT parameters ====================
-- logMel (short):
+- logMel @44kHz:
     sample_rate=44100, fft_size=1024, hop_size=256 (75% overlap)
     → FPS≈172; downsample x3 → effective FPS≈57    (17.4ms temporal resolution)
     → segment length 4096 frames x 17.4ms ≈ 71s    (71s each segment)
-- logMel (long):
+- logMel @44kHz:
     sample_rate=44100, fft_size=1024, hop_size=256 (75% overlap)
     → FPS≈172; downsample x5 → effective FPS≈34    (29ms temporal resolution)
     → segment length 10000 frames x 29ms ≈ 290s    (290s each segment)
-- Bark (short):
+- Bark (high-res variant) @48kHz:
     sample_rate=48000, fft_size=256, hop_size=96   (63% overlap)
     → FPS≈500; downsample x8 → effective FPS≈62    (16ms temporal resolution)
     → segment length 4096 frames x 16ms ≈ 66s      (66s each segment)
-- Bark (long):
+- Bark (high-res variant) @48kHz:
     sample_rate=48000, fft_size=256, hop_size=96   (63% overlap)
     → FPS≈500; downsample x15 → effective FPS≈33   (30ms temporal resolution)
     → segment length 10000 frames x 30ms ≈ 300s    (300s each segment)
     
-=============================================================================
+====================== Beat This ISMIR2024 FFT parameters =====================
+- logMel @22kHz:
+    sample_rate=22050, fft_size=1024, FPS=50 (FPS is defined param in this work)
+    → hop_size=441 (57% overlap), 
+    → segment length 30s
 
-Common Defaults:
-- Librosa Log-Mel:
-    sample_rate=22050, fft_size=2048, hop_size=512 (75% overlap) → FPS≈43, mel_bins=229
-- MATLAB 2007 Bark:
-    sample_rate=16000, fft_size=1024, hop_size=512 (50% overlap) → FPS≈86, bark_bands=24
-
-Our Development:
-- Bark @16kHz: 
-    Fix 50% overlap ratio for the bark feature, same as the MATLAB 2007 & mosqito (ISO.532-1:2017) defaults.
-    → sample_rate=16000, fft_size=256,  fps=125    (~50% ovarlap)
-                         fft_size=512,  fps=62     (~50% ovarlap)
-                         fft_size=1024, fps=31     (~50% ovarlap)
-- Log-Mel @16kHz: 
-    Fix 75% overlap for the log-mel feature, same as the librosa defaults.
-    → sample_rate=16000, fft_size=512,  fps=60     (~75% ovarlap)
+=========================== Our BSSL FFT parameters ===========================
+- Bark @22kHz: 
+    sample_rate=22050, fft_size=1024, FPS=50 (we define FPS same as Beat This)
+    → hop_size=441 (57% overlap), 
+    → segment length 60s, thanks to the size of BSSL (smaller than logMel)
 """
-import torch
+import torch, torchaudio
 import torch.nn as nn
-import torchaudio
 import numpy as np
 import pandas as pd
 import os, time, argparse, h5py

@@ -7,7 +7,9 @@ from mido import MidiFile
 from sklearn.model_selection import train_test_split, GroupKFold
 import torch.nn.functional as F
 import re
-
+from omegaconf import OmegaConf
+from typing import Dict, Tuple, Any, List
+from models_audioCNN import SingleCNN, MultiTaskCNN
 
 def read_midi(midi_path, mode ='hpt'):
     """
@@ -516,3 +518,25 @@ def log_gradient_norm(model, step):
             total_norm += param_norm.item() ** 2
     total_norm = total_norm ** 0.5
     return total_norm
+
+
+# ---------------- Model load ----------------
+_MODEL = {"SingleCNN": SingleCNN, "MultiTaskCNN": MultiTaskCNN}
+
+def _load_ckpt(path: str, device: torch.device):
+    try:  # fast path
+        return torch.load(path, map_location=device) 
+    except Exception:  # fallback
+        return torch.load(path, map_location=device, weights_only=False)
+
+def load_model(checkpoint_path: str, device: torch.device, overrides: Dict[str, Any] | None) -> Tuple[torch.nn.Module, OmegaConf]:
+    if not os.path.isfile(checkpoint_path): raise FileNotFoundError(checkpoint_path)
+    ckpt = _load_ckpt(checkpoint_path, device)
+    cfg = OmegaConf.create(ckpt["cfg"])
+    if overrides: cfg = OmegaConf.merge(cfg, OmegaConf.create(overrides))
+    name = str(getattr(cfg.exp, "model_name"))
+    if name not in _MODEL: raise ValueError(f"Unknown model_name: {name}")
+    model = _MODEL[name](cfg).to(device)
+    model.load_state_dict(ckpt["model"], strict=False)
+    model.eval()
+    return model, cfg

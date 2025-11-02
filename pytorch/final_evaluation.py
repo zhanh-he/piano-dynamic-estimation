@@ -1,15 +1,14 @@
 """Evaluate predictions vs GT on test split (baseline/advanced)."""
 from __future__ import annotations
-import argparse, csv, json, os
+import argparse, csv, json, os, h5py, torch
 from typing import Dict, List
-import h5py, numpy as np, torch
+import numpy as np
 from sklearn.metrics import f1_score, accuracy_score
 
 from evaluator import cal_dynamic_cci_and_weighted_f1, cal_beat_f1_beatthis, cal_change_point_f1
 from post_processor.beat_postproc import Postprocessor
-from inference import load_model
 from dataloader import time_to_frame_roll, time_to_dynamic_roll
-from utils import parse_overrides_str, select_checkpoint, pad_or_truncate_np
+from utils import parse_overrides_str, select_checkpoint, pad_or_truncate_np, load_model
 
 # ---------------- Helpers ----------------
 def _fps(cfg) -> int: return int(getattr(cfg.feature, "frames_per_second", 50))

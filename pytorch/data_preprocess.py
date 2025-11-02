@@ -3,36 +3,31 @@ We found some data issues in the MazurkaBL-master dataset, refer to problem_in_d
 
 - Issue1: Unusual dynamic markings occur in some mazurkas, 
     e.g., M63-2.
-    @ Policy clarification:
+    @ Clarification:
         We exclude these unusual mazurkas from the dataset.
 
 - Issue2: Some pid columns in beat_time and beat_dyn CSVs are incorrect, 
     e.g., "pid9070b-01" should be "pid9070b-09" in M41-1.
-    @ Policy clarification:
+    @ Clarification:
         We manually fix this by renaming the pid matching the correct performance ID.
 
 - Issue3: Some mazurkas first annotated dynamic_marking is not starting from the first beat, 
     e.g., M17-3
-    @ Policy clarification:
+    @ Clarification:
         1. Frames BEFORE the first *beat time* are BLANK
         2. Beat indices from first beat up to the first annotated dynamic beat are treated as 'mf' (default dynamic in common rules).
 
 These issues are fixed in this script.
 """
-import os
-import sys    
-import argparse
-
+import argparse, os, sys, h5py, librosa
 import pandas as pd
 import numpy as np
-import librosa
-import h5py
 from hydra import initialize, compose
 from tqdm import tqdm
 from utils import create_folder, float32_to_int16, create_logging, get_filename, read_midi, load_discography_pid_metadata,
 
-# ---- Dynamic level mapping (Mazurka: 5 labels; optional 8). 'blank' covers padding/silence.
 
+# ---- Dynamic level mapping (Mazurka: 5 labels; optional 8). 'blank' covers padding/silence.
 DYNAMIC_LEVEL_MAPS = {
     '8-level': {'blank': 0, 'ppp': 1, 'pp': 2, 'p': 3, 'mp': 4, 'mf': 5, 'f': 6, 'ff': 7, 'fff': 8},
     '5-level': {'blank': 0,           'pp': 1, 'p': 2,          'mf': 3, 'f': 4, 'ff': 5}

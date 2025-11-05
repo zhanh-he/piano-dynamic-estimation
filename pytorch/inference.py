@@ -1,7 +1,16 @@
-"""Song-level inference: segment -> predict -> stitch -> save H5."""
+"""
+Song-level inference utilities.
+
+Supports two entry points:
+- Given an existing HDF5 with 'waveform' → predict → derive times → save an output H5
+- Given a raw audio file (wav/mp3) → build a minimal H5 → predict → derive times → save an output H5
+
+Notebook-friendly helpers are provided at the bottom: `infer_audio_to_h5` and `infer_h5_to_h5`.
+"""
 
 from __future__ import annotations
 import argparse, csv, os, h5py
+import librosa
 from typing import Dict, Tuple, Any, List
 import numpy as np
 import torch
@@ -9,7 +18,7 @@ from tqdm import tqdm
 
 from post_processor.dynamic_postproc import detect_change_point
 from post_processor.beat_postproc import Postprocessor
-from utils import int16_to_float32, parse_overrides_str, select_checkpoint, load_model
+from utils import int16_to_float32, parse_overrides_str, select_checkpoint, load_model, float32_to_int16
 
 
 # ---------------- Helpers (cfg) ----------------
@@ -53,6 +62,8 @@ def _predict_song(cfg, model: torch.nn.Module, device: torch.device, h5_path: st
     hop_frames = int(round(hop_sec * fps))
 
     with h5py.File(h5_path, "r") as hf:
+        if "waveform" not in hf:
+            raise KeyError(f"Missing 'waveform' in H5: {h5_path}")
         wav = int16_to_float32(hf["waveform"][:])
         duration_sec = float(hf.attrs.get("duration_librosa", len(wav) / sr))
 
@@ -196,12 +207,30 @@ def _save_h5(cfg, in_h5: str, pred: Dict[str, np.ndarray], drv: Dict[str, np.nda
     with h5py.File(in_h5, "r") as src, h5py.File(out_path, "w") as dst:
         for k, v in src.attrs.items(): dst.attrs[k] = v
         dst.attrs["frames_per_second"] = fps; dst.attrs["sample_rate"] = sr
+        # Keep a record that this file was produced by inference
+        dst.attrs["inference"] = True
         for opt in ["beat_time", "downbeat_time", "change_point_time", "measure_time"]:
             if opt in src: dst.create_dataset(opt, data=src[opt][:])
         for k in ["dynamic_output", "beat_output", "downbeat_output", "change_point_output"]:
             if k in pred: dst.create_dataset(k, data=pred[k].astype(np.float32))
         for k, v in drv.items():
             dst.create_dataset(k, data=(v.astype(np.float32) if k.endswith("_roll") else v))
+    return out_path
+
+
+# ---------------- Minimal H5 builder from raw audio ----------------
+def _build_minimal_h5_from_audio(audio_path: str, cfg, out_path: str) -> str:
+    """Create a minimal H5 containing only the waveform and basic attrs for inference.
+    - Resamples to cfg.feature.sample_rate
+    - Stores 'waveform' as int16, and 'duration_librosa' attr
+    """
+    sr = _sr(cfg)
+    wav, _ = librosa.load(audio_path, sr=sr, mono=True)
+    os.makedirs(os.path.dirname(out_path), exist_ok=True)
+    with h5py.File(out_path, "w") as hf:
+        hf.attrs["audio_path"] = os.path.abspath(audio_path)
+        hf.attrs["duration_librosa"] = float(len(wav) / sr)
+        hf.create_dataset("waveform", data=float32_to_int16(wav))
     return out_path
 
 
@@ -219,17 +248,71 @@ def run_inference(checkpoint_path: str, overrides: Dict[str, Any] | None, h5_pat
     return outs
 
 
+# ---------------- Notebook-friendly entry points ----------------
+def infer_h5_to_h5(ckpt_or_dir: str, h5_path: str, overrides: Dict[str, Any] | None = None,
+                   output_dir: str | None = None) -> str:
+    """Run inference for a single input H5 file and return output H5 path.
+    - If `ckpt_or_dir` is a directory, select the best checkpoint by valf1.
+    - Outputs under `<output_dir or parent(ckpt_dir)/outputs>/<ckpt_dirname>/<ckpt_name>/<basename(h5)>`.
+    """
+    if os.path.isdir(ckpt_or_dir):
+        ckpt = select_checkpoint(ckpt_or_dir, valf1_rank=1, min_epoch=None)
+    else:
+        ckpt = ckpt_or_dir
+    cdir = os.path.dirname(ckpt)
+    cname = os.path.splitext(os.path.basename(ckpt))[0]
+    base_root = output_dir if output_dir else os.path.join(os.path.dirname(cdir), "outputs")
+    out_root = os.path.join(base_root, os.path.basename(cdir), cname)
+    override_out = os.path.join(out_root, os.path.basename(h5_path))
+    outs = run_inference(ckpt, overrides, [h5_path], out_root, None, override_out, False)
+    return outs[0]
+
+
+def infer_audio_to_h5(ckpt_or_dir: str, audio_path: str, overrides: Dict[str, Any] | None = None,
+                      output_dir: str | None = None) -> str:
+    """End-to-end: audio (wav/mp3) -> minimal H5 -> predict -> output H5 path.
+    Returns the path to the output H5 containing:
+      - pred_beat_time, pred_downbeat_time, pred_change_point_time (in seconds)
+      - pred_dynamic_roll (framewise classes; same length as model frames)
+      - raw logits: dynamic_output, beat_output, downbeat_output, change_point_output
+    """
+    # Resolve checkpoint and load cfg for sample rate
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if os.path.isdir(ckpt_or_dir):
+        ckpt = select_checkpoint(ckpt_or_dir, valf1_rank=1, min_epoch=None)
+    else:
+        ckpt = ckpt_or_dir
+    model, cfg = load_model(ckpt, device, overrides)
+
+    # Build a minimal input H5 near the outputs
+    cdir = os.path.dirname(ckpt)
+    cname = os.path.splitext(os.path.basename(ckpt))[0]
+    base_root = output_dir if output_dir else os.path.join(os.path.dirname(cdir), "outputs")
+    out_root = os.path.join(base_root, os.path.basename(cdir), cname)
+    tmp_h5_dir = os.path.join(out_root, "inputs")
+    os.makedirs(tmp_h5_dir, exist_ok=True)
+    tmp_h5 = os.path.join(tmp_h5_dir, os.path.splitext(os.path.basename(audio_path))[0] + ".h5")
+    _build_minimal_h5_from_audio(audio_path, cfg, tmp_h5)
+
+    # Use the already-loaded model to avoid re-loading
+    pred = _predict_song(cfg, model, device, tmp_h5)
+    drv  = _practical_derive(cfg, pred, h5_path=tmp_h5)
+    out_path = _save_h5(cfg, tmp_h5, pred, drv, out_root, None, None, False)
+    return out_path
+
+
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Full-song inference exporter (choose checkpoint by valf1_rank / min_epoch).")
+    parser = argparse.ArgumentParser(description="Full-song inference exporter (choose checkpoint by valf1_rank / min_epoch). Also supports raw audio.")
     # Choose a checkpoint from --ckpt OR --ckpt_dir
     ckpt_group = parser.add_mutually_exclusive_group(required=True)
     ckpt_group.add_argument("--ckpt", type=str, help="Path to a single checkpoint (.pth/.ckpt)")
     ckpt_group.add_argument("--ckpt_dir", type=str, help="Directory containing checkpoints")
     parser.add_argument("--valf1_rank", type=int, default=1, help="Pick ckpt at given valf1 rank (1=best)")
     parser.add_argument("--min_epoch", type=int, default=None, help="Filter out checkpoints with epoch < min_epoch")
-    # Pick input source: single H5 OR CSV split H5s
+    # Pick input source: single H5 OR raw audio OR CSV split H5s
     input_group = parser.add_mutually_exclusive_group(required=True)
     input_group.add_argument("--infer_h5", type=str, help="Single input H5 path")
+    input_group.add_argument("--infer_audio", type=str, help="Single input audio (wav/mp3)")
     input_group.add_argument("--infer_split_csv", type=str, help="CSV with columns [h5_name, opus, split]; only rows where split=='test' are used")
     parser.add_argument("--overrides", type=str, default=None, help="Hydra-style overrides (key=value,key2=value2)")
     parser.add_argument("--output_dir", type=str, default=None, help="Base output dir; default: <parent_of_ckpt_dir>/outputs")
@@ -253,6 +336,21 @@ def main() -> None:
         override_out = os.path.join(out_root, os.path.basename(in_h5))  # save as <h5_name>.h5
         outs = run_inference(ckpt, overrides, [in_h5], out_root, None, override_out, False)
         print(f"[{os.path.basename(ckpt)}] -> {outs[0]}")
+        return
+
+    # single raw audio
+    if args.infer_audio:
+        device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        model, cfg = load_model(ckpt, device, overrides)
+        base_out = _ckpt_out_base(ckpt)
+        tmp_h5_dir = os.path.join(base_out, "inputs")
+        os.makedirs(tmp_h5_dir, exist_ok=True)
+        tmp_h5 = os.path.join(tmp_h5_dir, os.path.splitext(os.path.basename(args.infer_audio))[0] + ".h5")
+        _build_minimal_h5_from_audio(args.infer_audio, cfg, tmp_h5)
+        pred = _predict_song(cfg, model, device, tmp_h5)
+        drv  = _practical_derive(cfg, pred, h5_path=tmp_h5)
+        out_h5 = _save_h5(cfg, tmp_h5, pred, drv, base_out, None, None, False)
+        print(f"[{os.path.basename(ckpt)}] -> {out_h5}")
         return
 
     # CSV: collect test H5s via cfg.workspace + sr (from selected ckpt)

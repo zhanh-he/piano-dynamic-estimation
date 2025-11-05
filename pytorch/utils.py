@@ -540,3 +540,114 @@ def load_model(checkpoint_path: str, device: torch.device, overrides: Dict[str, 
     model.load_state_dict(ckpt["model"], strict=False)
     model.eval()
     return model, cfg
+
+
+# ---------------- Plotting Functions ----------------
+import h5py
+import matplotlib.pyplot as plt
+import matplotlib.patches as patches
+
+cmap = {
+    'pp': '#6495ED',   # Cornflower Blue (for pianissimo)
+    'p': '#9bbcff',    # Light Blue (for piano)
+    'mp': '#d0e7ff',   # Very Light Blue (for mezzo-piano)
+    'mf': '#cccccc',   # Neutral Gray (for mezzo-forte)
+    'f': '#ffb3b3',    # Light Red (for forte)
+    'ff': '#ff7f7f',   # Bright Red (for fortissimo)
+    'fff': '#ff7f50',  # Coral (for fortississimo)    
+    'blank': '#ffffff' # White (for blank/empty sections)
+}
+
+def plot_predicted_dynamics_h5(h5_path: str):
+    """Minimal two-figure plotting from an inference H5.
+    Figure A: color blocks over beats; Figure B: step curve over beats.
+    """
+    with h5py.File(h5_path, 'r') as f:
+        fps = int(f.attrs["frames_per_second"]) if 'frames_per_second' in f.attrs else 50
+        dyn_roll = f["pred_dynamic_roll"][:] if "pred_dynamic_roll" in f else None
+        beat_time = f["pred_beat_time"][:] if "pred_beat_time" in f else np.array([])
+        if "pred_dynamic_beat_class" in f:
+            dyn_beat_cls = f["pred_dynamic_beat_class"][:]
+        else:
+            if dyn_roll is None or beat_time.size == 0:
+                raise RuntimeError("Need pred_dynamic_roll and pred_beat_time in H5 or pred_dynamic_beat_class")
+            idx = np.clip(np.round(beat_time * fps).astype(int), 0, len(dyn_roll) - 1)
+            dyn_beat_cls = dyn_roll[idx]
+
+    labels_5 = ['blank','pp','p','mf','f','ff']
+    labels_8 = ['blank','ppp','pp','p','mp','mf','f','ff','fff']
+    if dyn_beat_cls.max() <= 5:
+        id2lab = labels_5
+    elif dyn_beat_cls.max() <= 8:
+        id2lab = labels_8
+    else:
+        K = int(dyn_beat_cls.max()) + 1
+        id2lab = [f"c{i}" for i in range(K)]
+
+    N = len(dyn_beat_cls)
+    if N == 0:
+        raise RuntimeError("No predicted beats found in H5")
+    measures = [1]
+    dyn_labels = [id2lab[int(dyn_beat_cls[0])]]
+    for b in range(1, N):
+        lab = id2lab[int(dyn_beat_cls[b])]
+        if lab != dyn_labels[-1]:
+            measures.append(b + 1)
+            dyn_labels.append(lab)
+    true_end = N
+    full_measures = measures + [true_end]
+
+    # Blocks
+    fig, ax = plt.subplots(figsize=(14, 2.6), dpi=140)
+    for i, dyn in enumerate(dyn_labels):
+        x0 = full_measures[i]; x1 = full_measures[i + 1]
+        ax.add_patch(patches.Rectangle((x0, 0.3), x1 - x0, 0.7,
+                                       facecolor=cmap.get(dyn.lower(), '#dddddd'),
+                                       edgecolor='black', linewidth=0.8))
+        if dyn.lower() != 'blank':
+            ax.text((x0 + x1) / 2, 0.65, dyn, ha='center', va='center', fontsize=10, weight='bold')
+    ticks = [1] + list(range(20, ((true_end // 20) + 2) * 20, 20))
+    ax.set_xlim(1, true_end)
+    ax.set_xticks(ticks)
+    ax.set_ylim(0, 1)
+    ax.set_yticks([])
+    ax.set_xlabel('Score beat / Measure', fontsize=12)
+    for s in ['top','right','left']:
+        ax.spines[s].set_visible(False)
+    plt.title("Predicted Dynamics vs Measure Timeline (beat domain)", fontsize=13)
+    plt.tight_layout(); plt.show()
+
+    # Curve
+    dmap8 = {'ppp':0,'pp':1,'p':2,'mp':3,'mf':4,'f':5,'ff':6,'fff':7}
+    def lab_to_val(l):
+        l = l.lower()
+        if l in dmap8: return dmap8[l]
+        if l == 'blank': return 0
+        order5 = ['pp','p','mf','f','ff']
+        if l in order5: return 1 + order5.index(l)
+        return np.nan
+
+    x_pts, y_pts = [], []
+    for i, dyn in enumerate(dyn_labels):
+        yv = lab_to_val(dyn)
+        if np.isnan(yv):
+            continue
+        x0, x1 = full_measures[i], full_measures[i + 1]
+        x_pts += [x0, x1]
+        y_pts += [yv, yv]
+
+    fig, ax = plt.subplots(figsize=(14, 3), dpi=140)
+    ax.plot(x_pts, y_pts, drawstyle='steps-post', color='black', linewidth=2)
+    ax.set_xlim(1, true_end)
+    yt_labs = ['ppp','pp','p','mp','mf','f','ff','fff']
+    if any(l.lower() == 'ppp' for l in dyn_labels) or any(l.lower() == 'fff' for l in dyn_labels):
+        ax.set_ylim(-0.5, 7.5); ax.set_yticks(range(0,8)); ax.set_yticklabels(yt_labs, fontsize=9)
+    else:
+        ax.set_ylim(-0.5, 5.5); ax.set_yticks(range(0,6)); ax.set_yticklabels(['blank','pp','p','mf','f','ff'], fontsize=9)
+    ax.set_xlabel('Score beat / Measure', fontsize=11)
+    ax.set_ylabel('MIDI Dynamic Level', fontsize=11)
+    ax.set_title('Predicted Dynamics Curve (beat domain)', fontsize=13)
+    ax.grid(True, linestyle='--', alpha=0.7)
+    for s in ['top','right']:
+        ax.spines[s].set_visible(False)
+    plt.tight_layout(); plt.show()

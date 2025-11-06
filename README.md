@@ -18,13 +18,14 @@ We made a PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to p
 - [PsychoFeatureExtractor](#psychofeatureextractor)
 
 If want to retrain the model or reproduce our paper results, continue the follow sections.
-
+Training & WandB Report
+## Evaluation (Ours and Baselines)
 3. [Download MazurkaBL Dataset](#mazurkabl-dataset)
 4. [Perform Data Preprocessing](#data-preprocessing)
-5. [Training & WandB Report](#training)
+5. [Training and WandB Report](#training-and-wandb-report)
 
 You can check our training history in **WandB Report** and **Evaluation Results** on
-- [Evaluation (Ours & Baselines)](#reproduce-metrics-from-the-paper)
+- [Evaluation (Ours and Baselines)](#evaluation-ours-and-baselines)
 
 ## Environment Setup
 Create and activate Conda env with CPU-compatible PyTorch 2.2, then Add the pip-only packages.
@@ -94,11 +95,11 @@ Here is the problem we found:
     dataset.exclude_pids: null # Evaluation
     ```
 
-## Training & WandB Report
+## Training and WandB Report
 Our training histroy and hyperparameters can be found in this [WandB Report [Link]](https://api.wandb.ai/links/zhanh-uwa/fcsjrq07).
 
 <p align="center">
-  <img src="./figures/3_wandb_preview.jpg" alt="Training History" width="540">
+  <img src="./figures/3_wandb_preview.jpg" alt="Training History" width="720">
   <br><em>Figure 3: Compare our multitask model (green) vs. each single-task model. We also compare the feature used "BSSL: solid line, logMel: dashed line"</em>
 </p>
 

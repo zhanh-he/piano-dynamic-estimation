@@ -2,25 +2,29 @@
 This repo corresponding to our submitted paper to ICASSP2026.
 - Joint Estimation of Piano Dynamics and Metrical Structure with a Multi-task Multi-scale Network [[PDF]](https://www.arxiv.org/abs/2510.18190)
 
-Our proposed multitask model can estimate piano dynamics, change points, beats, and downbeats from audio at once. We are polishing our model's inference stage, currntly integrates with "High-resolution Piano Transcription (TASLP2021)" system, more AMT systems in progress.
+Our proposed multitask model can estimate piano dynamics, change points, beats, and downbeats from audio. We are polishing our inference stage, about how to integrate with "High-resolution Piano Transcription (TASLP2021)" system, more AMT systems in progress.
 
 <p align="center">
   <img src="./figures/1_user_case.jpg" alt="User case demo" width="720">
   <br><em>Figure 1: User case demonstration.</em>
 </p>
 
-We also made a PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to provide Bark-scale specific loudness (BSSL) senation based on "Zwicker 1999 method" (yielding a up to 24-dim feature). We found the BSSL outperformed the log-Mel in our tasks, with a 5x smaller feature dimension.
+To use our model,
 
-[Environment Setup](#environment-setup) &middot;
-[Inference & Checkpoints](#inference-and-checkpoints) &middot;
-[PsychoFeatureExtractor](#psychofeatureextractor)
+1. [Setup python environment](#environment-setup)
+2. [Inference with our pretrain model](#inference-and-checkpoints)
+
+We made a PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to provide Bark-scale specific loudness (BSSL) senation based on "Zwicker 1999 method" (yielding a up to 24-dim feature). We found the BSSL outperformed the logMel in our tasks, with a 5x smaller feature size. Find more in
+- [PsychoFeatureExtractor](#psychofeatureextractor)
 
 If want to retrain the model or reproduce our paper results, continue the follow sections.
 
-[MazurkaBL Dataset](#mazurkabl-dataset) &middot;
-[Data Preprocessing](#data-preprocessing) &middot;
-[Training & WandB Report](#training) &middot;
-[Evaluation (Ours & Baselines)](#reproduce-metrics-from-the-paper)
+3. [Download MazurkaBL Dataset](#mazurkabl-dataset)
+4. [Perform Data Preprocessing](#data-preprocessing)
+5. [Training & WandB Report](#training)
+
+You can check our training history in **WandB Report** and **Evaluation Results** on
+- [Evaluation (Ours & Baselines)](#reproduce-metrics-from-the-paper)
 
 ## Environment Setup
 Create and activate Conda env with CPU-compatible PyTorch 2.2, then Add the pip-only packages.
@@ -61,8 +65,8 @@ To download the dataset, visit the github repo [MazurkaBL-master](https://github
 There are some small problems we found in MazurkaBL dataset. We solved them with the following command. You can follow our [`Data_Preprocess.ipynb`](./Data_Preprocess.ipynb) to easily handle these, as well as packaged the audio into h5 files for a quick loading.
  ```bash
 # start here if you download raw mazurkaBL
-python pytorch/data_preprocess.py --mode fix_problem  # <can be skip>
-python pytorch/data_preprocess.py --mode cleanup_meta # <can be skip>
+python pytorch/data_preprocess.py --mode fix_problem  # <can skip>
+python pytorch/data_preprocess.py --mode cleanup_meta # <can skip>
 # start here if you download our cleanup data
 python pytorch/data_preprocess.py --mode pack_h5 --sample_rate 22050
  ```
@@ -87,14 +91,18 @@ Here is the problem we found:
     - "mazurka33-4/pid9080-08.h5"
     - ...
 
-    dataset.exclude_pids: null # Regular training & evaluation
-    # - ...
+    dataset.exclude_pids: null # Evaluation
     ```
 
 ## Training & WandB Report
-- Our training histroy and all settings (hyperparameters) can be found in this [WandB Report [Link]](https://api.wandb.ai/links/zhanh-uwa/fcsjrq07).
+Our training histroy and hyperparameters can be found in this [WandB Report [Link]](https://api.wandb.ai/links/zhanh-uwa/fcsjrq07).
 
-Once the dataset is downloaded, and the data pre-processing done, you can follow our `Train_Model.ipynb` to start the model training. We are doing the 5-fold cross-validation, the data is split on the Mazurka opus to becomes 5 folds, these five `split.csv` files can be found on `workspaces/` folder. To train with 5-fold:
+<p align="center">
+  <img src="./figures/3_wandb_preview.jpg" alt="Training History" width="540">
+  <br><em>Figure 3: Compare our multitask model (green) vs. each single-task model. We also compare the feature used "BSSL: solid line, logMel: dashed line"</em>
+</p>
+
+Once the dataset is downloaded, and the data pre-processing done, you can follow our [`Train_Model.ipynb`](./Train_Model.ipynb) to start the model training. We are doing the 5-fold cross-validation, the data is split on the Mazurka opus to becomes 5 folds, these five `split.csv` files can be found on `workspaces/` folder. To train with 5-fold:
 
 ```bash
 python pytorch/train.py wandb.note='formal latent8 mmoe8 5x5' exp.model_name=MultiTaskCNN dataset.run_all_folds=True

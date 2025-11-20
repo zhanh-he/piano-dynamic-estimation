@@ -52,6 +52,8 @@ We implemented this PsychoFeatureExtractor in PyTorch framwork, according to the
   <br><em>Figure 2: Bark-scale total loudness from different implementation.</em>
 </p>
 
+Our PyTorch implemented BSSL (max 24-dim) has the similar total loudness as in MATLAB 2007 version (max 24-dim), while the high-res variant BSSL (max 240-dim) used in paper 2024 provided slightly different total loudness. We use the original BSSL as the foundation of this project. Explore the Bark-scale feature (incl. high-res and different psychoacoustic masking functions)  is our future work. <br>
+
 **NOTE: The following section is for training & reproduce**
 
 ## MazurkaBL Dataset

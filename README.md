@@ -18,8 +18,7 @@ We made a PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to p
 - [PsychoFeatureExtractor](#psychofeatureextractor)
 
 If want to retrain the model or reproduce our paper results, continue the follow sections.
-Training & WandB Report
-## Evaluation (Ours and Baselines)
+
 3. [Download MazurkaBL Dataset](#mazurkabl-dataset)
 4. [Perform Data Preprocessing](#data-preprocessing)
 5. [Training and WandB Report](#training-and-wandb-report)

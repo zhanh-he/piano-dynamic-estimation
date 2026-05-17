@@ -1,3 +1,0 @@
-checkpoint,AMLt_beat,AMLt_downbeat,CMLt_beat,CMLt_downbeat,Cemgil_beat,Cemgil_downbeat,F-measure_beat,F-measure_downbeat
-mazurka_h5_22050_S86_F4_epoch14-valloss1.2587.ckpt,0.401442,0.157772,0.400918,0.044012,0.651221,0.326267,0.725932,0.331695
-last.ckpt,0.318665,0.126131,0.312428,0.033384,0.583352,0.217816,0.675501,0.225094

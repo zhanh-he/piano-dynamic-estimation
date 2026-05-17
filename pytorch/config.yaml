@@ -68,15 +68,25 @@ cnn:
 
 
 dataset:
+  # Name decides which `hdf5s/<name>_sr<sr>` dir the inference/eval pipeline
+  # reads. "mazurka" for training; override to "vienna" or "batik" at inference
+  # time, e.g.  --overrides dataset.name=vienna
+  name: "mazurka"
   use_5fold: True                   # Enable 5-fold CV; if run_all_folds=true this is forced to True
   run_all_folds: False              # True: sequentially train folds 0..4 in one run (forces use_5fold=True; ignores fold_index & random_split_ratio)
   fold_index: 0                     # Only used when run_all_folds=false and use_5fold=true; valid range: 0..4
   random_split_ratio: [8,1,1]       # Only used when use_5fold=false and run_all_folds=false (random train:valid:test split)
+  vienna:
+    root: "/media/datadisk/home/22828187/zhanh/Dataset/vienna4x22"
+    exclude_opus: []
+  batik:
+    prepared: "/media/datadisk/home/22828187/zhanh/Dataset/Batik-play-Mozart/prepared"
+    exclude_opus: []
   mazurka:
-    raw_meta_dir: "../202505_dynest_data/Dataset/MazurkaBL-master"
-    cln_meta_dir: "../202505_dynest_data/Dataset/mazurka_meta"
-    audio_dir:    "../202505_dynest_data/Dataset/mazurka_audio"
-    midi_dir:     "../202505_dynest_data/Dataset/mazurka_mid"
+    raw_meta_dir: "/media/datadisk/home/22828187/zhanh/Dataset/mazurka/MazurkaBL-master" # "../202505_dynest_data/Dataset/MazurkaBL-master"
+    cln_meta_dir: "/media/datadisk/home/22828187/zhanh/Dataset/mazurka/mazurka_meta"     # "../202505_dynest_data/Dataset/mazurka_meta"
+    audio_dir:    "/media/datadisk/home/22828187/zhanh/Dataset/mazurka/mazurka_audio"
+    midi_dir:     "/media/datadisk/home/22828187/zhanh/Dataset/mazurka/mazurka_mid"
     # Some opus included non-dynamic markings, hence excluded
     exclude_opus:
       - "M06-4"

@@ -19,12 +19,13 @@ We found some data issues in the MazurkaBL-master dataset, refer to problem_in_d
 
 These issues are fixed in this script.
 """
-import argparse, os, sys, h5py, librosa
+import argparse, os, sys, h5py, librosa, re
 import pandas as pd
 import numpy as np
 from hydra import initialize, compose
 from tqdm import tqdm
-from utils import create_folder, float32_to_int16, create_logging, get_filename, read_midi, load_discography_pid_metadata,
+from utils import create_folder, float32_to_int16, create_logging, get_filename, read_midi, load_discography_pid_metadata
+from score_features import extract_score_features, read_midi_any
 
 
 # ---- Dynamic level mapping (Mazurka: 5 labels; optional 8). 'blank' covers padding/silence.
@@ -261,10 +262,197 @@ def pack_mazurka_dataset_to_hdf5(cfg, sample_rate):
     tqdm.write(f"Finished writing HDF5 files to {hdf5_root}")
 
 
+# ----------------------------------------------------------------------
+# Test-only datasets: Vienna4x22 and Batik-plays-Mozart
+# ----------------------------------------------------------------------
+def _pack_test_dataset(audio_path, midi_path, match_path, musicxml_path,
+                       opus, performer, hf_out, sample_rate):
+    """Write one performance into hf_out using the Mazurka HDF5 schema."""
+    feats = extract_score_features(match_path, musicxml_path)
+
+    audio, _ = librosa.load(audio_path, sr=sample_rate, mono=True)
+    duration_librosa = float(len(audio) / sample_rate)
+    midi = read_midi_any(midi_path)
+
+    dynmark_5_class = np.array(
+        [DYNAMIC_LEVEL_MAPS['5-level'].get(m, 0) for m in feats['dynmark_labels_5']],
+        dtype=np.int64,
+    )
+    dynmark_8_class = np.array(
+        [DYNAMIC_LEVEL_MAPS['8-level'].get(m, 0) for m in feats['dynmark_labels_8']],
+        dtype=np.int64,
+    )
+
+    hf_out.attrs.create('opus', data=opus.encode(), dtype='S64')
+    hf_out.attrs.create('audio_filename', data=os.path.basename(audio_path).encode(), dtype='S200')
+    hf_out.attrs.create('midi_filename', data=os.path.basename(midi_path).encode(), dtype='S200')
+    hf_out.attrs.create('duration_librosa', data=np.float32(duration_librosa), dtype=np.float32)
+    hf_out.attrs.create('performer', data=performer.encode(), dtype='S100')
+    hf_out.attrs.create('duration_in_meta', data=np.float32(feats['duration_perf_sec']), dtype=np.float32)
+
+    hf_out.create_dataset('waveform', data=float32_to_int16(audio), dtype=np.int16)
+    hf_out.create_dataset('midi_event', data=[e.encode() for e in midi['midi_event']], dtype='S100')
+    hf_out.create_dataset('midi_event_time', data=midi['midi_event_time'].astype(np.float32), dtype=np.float32)
+
+    hf_out.create_dataset('beat_time', data=feats['beat_time'], dtype=np.float32)
+    hf_out.create_dataset('downbeat_time', data=feats['downbeat_time'], dtype=np.float32)
+    hf_out.create_dataset('measure_time', data=feats['measure_time'], dtype=np.float32)
+    hf_out.create_dataset('change_point_time', data=feats['change_point_time'], dtype=np.float32)
+
+    beats = feats['beat_time']
+    labels_5 = feats['dynmark_labels_5']
+    # change-point per-beat boolean (re-derive from labels for the bytes block)
+    is_change = np.zeros(len(labels_5), dtype=bool)
+    if len(labels_5):
+        is_change[0] = True
+        is_change[1:] = labels_5[1:] != labels_5[:-1]
+    hf_out.create_dataset('dynmark_beats',
+                          data=[f"{t:.3f}:{m}".encode() for t, m in zip(beats, labels_5)], dtype='S20')
+    hf_out.create_dataset('dynmark_changes',
+                          data=[f"{t:.3f}:{m}".encode() for t, m in zip(beats[is_change], labels_5[is_change])], dtype='S20')
+    hf_out.create_dataset('dynmark_5_class', data=dynmark_5_class, dtype=np.int64)
+    hf_out.create_dataset('dynmark_8_class', data=dynmark_8_class, dtype=np.int64)
+
+
+def pack_vienna_dataset_to_hdf5(cfg, sample_rate):
+    """Pack Vienna4x22 into HDF5 (one .h5 per performance)."""
+    root = cfg.dataset.vienna.root
+    audio_root = os.path.join(root, 'audio')
+    midi_root = os.path.join(root, 'midi')
+    match_root = os.path.join(root, 'match')
+    xml_root = os.path.join(root, 'musicxml')
+    hdf5_root = os.path.join(cfg.exp.workspace, 'hdf5s', f'vienna_sr{sample_rate}')
+
+    create_logging(os.path.join(cfg.exp.workspace, 'logs', get_filename(__file__)), filemode='w')
+    tqdm.write(f"Start packing Vienna4x22 dataset: {root}")
+    exclude_list = cfg.dataset.vienna.exclude_opus or []
+
+    # Performance filename pattern: <piece>_p<NN>.wav   (.match + .mid share that stem)
+    pat = re.compile(r"^(.+?)_p(\d+)\.wav$")
+    # Map piece-stem -> musicxml file (Vienna xml stem omits the _pNN suffix)
+    xml_files = sorted(f for f in os.listdir(xml_root) if f.endswith('.musicxml'))
+    piece_to_xml = {os.path.splitext(f)[0]: os.path.join(xml_root, f) for f in xml_files}
+
+    skipped, packed = [], 0
+    audio_files = []
+    for sub in sorted(os.listdir(audio_root)):
+        sub_path = os.path.join(audio_root, sub)
+        if not os.path.isdir(sub_path):
+            continue
+        for f in sorted(os.listdir(sub_path)):
+            if f.endswith('.wav'):
+                audio_files.append((sub, f, os.path.join(sub_path, f)))
+
+    for sub, fname, audio_path in tqdm(audio_files, desc='Packing Vienna'):
+        m = pat.match(fname)
+        if not m:
+            skipped.append((fname, 'unparseable filename'))
+            continue
+        piece, perf_num = m.group(1), m.group(2)
+        if piece in exclude_list:
+            tqdm.write(f"[exclude_opus] skipped {fname}")
+            continue
+        if piece not in piece_to_xml:
+            skipped.append((fname, f'no musicxml for piece {piece}'))
+            continue
+        match_path = os.path.join(match_root, f"{piece}_p{perf_num}.match")
+        midi_path = os.path.join(midi_root, f"{piece}_p{perf_num}.mid")
+        if not os.path.isfile(match_path) or not os.path.isfile(midi_path):
+            skipped.append((fname, f'missing match/midi for {piece}_p{perf_num}'))
+            continue
+
+        opus = piece                           # e.g. "Mozart_K331_1st-mov"
+        stem = f"{piece}_p{perf_num}"
+        out_dir = os.path.join(hdf5_root, opus)
+        create_folder(out_dir)
+        out_path = os.path.join(out_dir, f"{stem}.h5")
+
+        try:
+            with h5py.File(out_path, 'w') as hf:
+                _pack_test_dataset(audio_path, midi_path, match_path, piece_to_xml[piece],
+                                   opus=opus, performer=f"p{perf_num}", hf_out=hf,
+                                   sample_rate=sample_rate)
+            packed += 1
+        except Exception as e:
+            tqdm.write(f"[ERR] {stem}: {e}")
+            skipped.append((fname, str(e)))
+            if os.path.isfile(out_path):
+                os.remove(out_path)
+
+    tqdm.write(f"Vienna packed: {packed}, skipped: {len(skipped)}")
+    for s in skipped:
+        tqdm.write(f"  skip {s[0]} -> {s[1]}")
+    tqdm.write(f"Finished writing HDF5 files to {hdf5_root}")
+
+
+def pack_batik_dataset_to_hdf5(cfg, sample_rate):
+    """Pack Batik-plays-Mozart into HDF5 (one .h5 per movement)."""
+    prepared = cfg.dataset.batik.prepared
+    hdf5_root = os.path.join(cfg.exp.workspace, 'hdf5s', f'batik_sr{sample_rate}')
+
+    create_logging(os.path.join(cfg.exp.workspace, 'logs', get_filename(__file__)), filemode='w')
+    tqdm.write(f"Start packing Batik dataset: {prepared}")
+    exclude_list = cfg.dataset.batik.exclude_opus or []
+
+    stems = sorted(d for d in os.listdir(prepared) if d.startswith('kv'))
+    skipped, packed = [], 0
+    for stem in tqdm(stems, desc='Packing Batik'):
+        d = os.path.join(prepared, stem)
+        try:
+            opus = stem.split('_')[0]   # e.g. "kv279"
+            if opus in exclude_list:
+                tqdm.write(f"[exclude_opus] skipped {stem}")
+                continue
+            out_dir = os.path.join(hdf5_root, opus)
+            create_folder(out_dir)
+            out_path = os.path.join(out_dir, f"{stem}.h5")
+            with h5py.File(out_path, 'w') as hf:
+                _pack_test_dataset(
+                    audio_path=os.path.join(d, 'audio.wav'),
+                    midi_path=os.path.join(d, 'performance.mid'),
+                    match_path=os.path.join(d, 'alignment.match'),
+                    musicxml_path=os.path.join(d, 'score.musicxml'),
+                    opus=opus, performer='Batik', hf_out=hf, sample_rate=sample_rate,
+                )
+            packed += 1
+        except Exception as e:
+            tqdm.write(f"[ERR] {stem}: {e}")
+            skipped.append((stem, str(e)))
+            if os.path.isfile(out_path):
+                os.remove(out_path)
+
+    tqdm.write(f"Batik packed: {packed}, skipped: {len(skipped)}")
+    for s in skipped:
+        tqdm.write(f"  skip {s[0]} -> {s[1]}")
+    tqdm.write(f"Finished writing HDF5 files to {hdf5_root}")
+
+
+def write_test_split_csv(hdf5_root: str, csv_path: str) -> None:
+    """Emit an inference/eval CSV (cols: h5_name, opus, split) marking every
+    packed file as the test split. The training pipeline never sees these."""
+    rows = []
+    for opus in sorted(os.listdir(hdf5_root)):
+        opus_dir = os.path.join(hdf5_root, opus)
+        if not os.path.isdir(opus_dir):
+            continue
+        for f in sorted(os.listdir(opus_dir)):
+            if f.endswith('.h5'):
+                rows.append((f, opus, 'test'))
+    os.makedirs(os.path.dirname(csv_path), exist_ok=True)
+    with open(csv_path, 'w') as fh:
+        fh.write('h5_name,opus,split\n')
+        for r in rows:
+            fh.write(','.join(r) + '\n')
+    print(f"Wrote {len(rows)} test-split rows -> {csv_path}")
+
+
 if __name__ == '__main__':
     parser = argparse.ArgumentParser()
-    parser.add_argument('--mode', type=str, choices=['fix_problem', 'cleanup_meta', 'pack_h5'], required=True,
-                        help="Select which step to run: fix_problem, cleanup_meta, or pack_h5.")
+    parser.add_argument('--mode', type=str,
+                        choices=['fix_problem', 'cleanup_meta', 'pack_h5',
+                                 'pack_h5_vienna', 'pack_h5_batik'],
+                        required=True,
+                        help="Select which step to run.")
     parser.add_argument('--sample_rate', type=int, default=44100,
                         help="Sampling rate for audio loading and folder naming.")
     args, unknown = parser.parse_known_args()     # Parser took known args, hydra can get the rest
@@ -288,3 +476,21 @@ if __name__ == '__main__':
     elif args.mode == 'pack_h5':
         print("[Mode] Packing Mazurka dataset to HDF5...")
         pack_mazurka_dataset_to_hdf5(cfg, sample_rate=args.sample_rate)
+
+    elif args.mode == 'pack_h5_vienna':
+        print("[Mode] Packing Vienna4x22 dataset to HDF5 (test split)...")
+        pack_vienna_dataset_to_hdf5(cfg, sample_rate=args.sample_rate)
+        write_test_split_csv(
+            hdf5_root=os.path.join(cfg.exp.workspace, 'hdf5s', f'vienna_sr{args.sample_rate}'),
+            csv_path=os.path.join(cfg.exp.workspace, 'split_csvs',
+                                  f'vienna_sr{args.sample_rate}_test.csv'),
+        )
+
+    elif args.mode == 'pack_h5_batik':
+        print("[Mode] Packing Batik-plays-Mozart dataset to HDF5 (test split)...")
+        pack_batik_dataset_to_hdf5(cfg, sample_rate=args.sample_rate)
+        write_test_split_csv(
+            hdf5_root=os.path.join(cfg.exp.workspace, 'hdf5s', f'batik_sr{args.sample_rate}'),
+            csv_path=os.path.join(cfg.exp.workspace, 'split_csvs',
+                                  f'batik_sr{args.sample_rate}_test.csv'),
+        )

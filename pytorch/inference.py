@@ -25,6 +25,7 @@ from utils import int16_to_float32, parse_overrides_str, select_checkpoint, load
 def _fps(cfg) -> int: return int(getattr(cfg.feature, "frames_per_second", 50))
 def _sr(cfg) -> int: return int(getattr(cfg.feature, "sample_rate", 22050))
 def _seg_sec(cfg) -> float: return float(getattr(cfg.feature, "segment_seconds", 60))
+def _dataset(cfg) -> str: return str(getattr(getattr(cfg, "dataset", object()), "name", "mazurka"))
 
 
 # ---------------- Enframing / stitching ----------------
@@ -199,7 +200,7 @@ def _save_h5(cfg, in_h5: str, pred: Dict[str, np.ndarray], drv: Dict[str, np.nda
         os.makedirs(out_dir, exist_ok=True)
         out_path = override_out
     else:
-        sub = subdir if subdir else f"mazurka_sr{sr}"
+        sub = subdir if subdir else f"{_dataset(cfg)}_sr{sr}"
         out_dir = os.path.join(out_root, sub, opus)
         os.makedirs(out_dir, exist_ok=True)
         out_path = os.path.join(out_dir, f"{name}{ext}" if not add_suffix else f"{name}-model_output{ext}")
@@ -356,7 +357,7 @@ def main() -> None:
     # CSV: collect test H5s via cfg.workspace + sr (from selected ckpt)
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     _m0, cfg0 = load_model(ckpt, device, overrides)
-    sr = _sr(cfg0); base_h5_dir = os.path.join(cfg0.exp.workspace, "hdf5s", f"mazurka_sr{sr}")
+    sr = _sr(cfg0); base_h5_dir = os.path.join(cfg0.exp.workspace, "hdf5s", f"{_dataset(cfg0)}_sr{sr}")
 
     rows: List[tuple[str, str]] = []
     with open(args.infer_split_csv, "r", newline="") as f:
@@ -373,7 +374,7 @@ def main() -> None:
         else: tqdm.write(f"[WARN] H5 not found: {path}")
 
     base_out = _ckpt_out_base(ckpt)
-    outs = run_inference(ckpt, overrides, h5_paths, base_out, f"mazurka_sr{sr}", None, False)
+    outs = run_inference(ckpt, overrides, h5_paths, base_out, f"{_dataset(cfg0)}_sr{sr}", None, False)
     print(f"[{os.path.basename(ckpt)}] Exported {len(outs)} file(s) under {base_out}")
 
 if __name__ == "__main__":

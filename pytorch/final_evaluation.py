@@ -14,6 +14,17 @@ from utils import parse_overrides_str, select_checkpoint, pad_or_truncate_np, lo
 def _fps(cfg) -> int: return int(getattr(cfg.feature, "frames_per_second", 50))
 def _sr(cfg) -> int: return int(getattr(cfg.feature, "sample_rate", 22050))
 def _dyn_classes(cfg) -> int: return int(getattr(cfg.feature, "dynamic_classes", 5))
+def _dataset(cfg) -> str: return str(getattr(getattr(cfg, "dataset", object()), "name", "mazurka"))
+
+# Coarse 3-class mapping. 0=blank, 1=quiet, 2=medium, 3=loud.
+_COARSE_LUT = {
+    5: torch.tensor([0, 1, 1, 2, 3, 3]),                   # blank, pp, p,        mf, f, ff
+    8: torch.tensor([0, 1, 1, 1, 2, 2, 3, 3, 3]),          # blank, ppp, pp, p, mp, mf, f, ff, fff
+}
+
+def _to_coarse(y: torch.Tensor, dyn_class: int) -> torch.Tensor:
+    lut = _COARSE_LUT[int(dyn_class)].to(y.device)
+    return lut[y.clamp(0, lut.numel() - 1).long()]
 
 def _pad_to_tensor(pred_h5, key: str, T: int) -> torch.Tensor:
     """Pad/cast H5 prediction to torch tensor length T."""
@@ -33,7 +44,7 @@ def _ckpt_pred_root(ckpt_path: str, output_root: str | None) -> str:
     return os.path.join(root, cbase, cname)
 
 def _collect_groundtruth(cfg, csv_path: str) -> List[str]:
-    base = os.path.join(cfg.exp.workspace, "hdf5s", f"mazurka_sr{_sr(cfg)}")
+    base = os.path.join(cfg.exp.workspace, "hdf5s", f"{_dataset(cfg)}_sr{_sr(cfg)}")
     out: List[str] = []
     with open(csv_path, "r", newline="") as f:
         for r in csv.DictReader(f):
@@ -165,11 +176,18 @@ def evaluate(ckpt: str, csv_path: str, overrides: Dict | None, output_root: str 
         return stats
 
     # Baseline metrics
-    dyn_f1 = None; cp_f1 = None; beat_f1 = None; down_f1 = None
+    dyn_f1 = None; dyn_coarse_f1 = None
+    cp_f1 = None; beat_f1 = None; down_f1 = None
     if dyn_true and dyn_pred:
         y_true = torch.cat(dyn_true); y_pred = torch.cat(dyn_pred); mask = torch.ones_like(y_true, dtype=torch.bool)
         _, f1w = cal_dynamic_cci_and_weighted_f1(y_true, y_pred, mask)
         dyn_f1 = round(float(f1w), 4)
+        # Coarse 3-class F1 (quiet=pp+p / medium=mf / loud=f+ff).
+        # Useful for cross-corpus eval where fine-grained priors differ a lot.
+        y_true_c = _to_coarse(y_true, dyn_class)
+        y_pred_c = _to_coarse(y_pred, dyn_class)
+        _, f1w_c = cal_dynamic_cci_and_weighted_f1(y_true_c, y_pred_c, mask)
+        dyn_coarse_f1 = round(float(f1w_c), 4)
     if beat_true and beat_pred_times:
         max_t = max(a.shape[1] for a in beat_true)
         true_arr = np.concatenate([np.pad(a, ((0,0),(0,max_t-a.shape[1])), "constant") for a in beat_true], 0)
@@ -186,10 +204,11 @@ def evaluate(ckpt: str, csv_path: str, overrides: Dict | None, output_root: str 
         f1, _ = cal_change_point_f1(true_arr, pred_arr, beat_arr, 0.0)
         cp_f1 = round(float(f1), 4)
     stats: Dict[str, float] = {}
-    if dyn_f1 is not None:  stats["dynamic_f1"] = dyn_f1
-    if cp_f1 is not None:   stats["change_point_f1"] = cp_f1
-    if beat_f1 is not None: stats["beat_f1"] = beat_f1
-    if down_f1 is not None: stats["downbeat_f1"] = down_f1
+    if dyn_f1 is not None:        stats["dynamic_f1"] = dyn_f1
+    if dyn_coarse_f1 is not None: stats["dynamic_coarse_f1"] = dyn_coarse_f1
+    if cp_f1 is not None:         stats["change_point_f1"] = cp_f1
+    if beat_f1 is not None:       stats["beat_f1"] = beat_f1
+    if down_f1 is not None:       stats["downbeat_f1"] = down_f1
     return stats
 
 def main() -> None:

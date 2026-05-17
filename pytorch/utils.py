@@ -533,7 +533,11 @@ def load_model(checkpoint_path: str, device: torch.device, overrides: Dict[str, 
     if not os.path.isfile(checkpoint_path): raise FileNotFoundError(checkpoint_path)
     ckpt = _load_ckpt(checkpoint_path, device)
     cfg = OmegaConf.create(ckpt["cfg"])
-    if overrides: cfg = OmegaConf.merge(cfg, OmegaConf.create(overrides))
+    if overrides:
+        # Use from_dotlist so keys like "dataset.name=vienna" actually nest
+        # under cfg.dataset.name instead of becoming a literal flat key.
+        dotlist = [f"{k}={v}" for k, v in overrides.items()]
+        cfg = OmegaConf.merge(cfg, OmegaConf.from_dotlist(dotlist))
     name = str(getattr(cfg.exp, "model_name"))
     if name not in _MODEL: raise ValueError(f"Unknown model_name: {name}")
     model = _MODEL[name](cfg).to(device)

@@ -1,0 +1,29 @@
+Selected 2 checkpoint(s):
+  - /media/datadisk/home/22828187/zhanh/202509_icassp_data/workspaces/mazurka_ckpts/ckpt_baselines/beat_this_ckpt/checkpoints/mazurka_h5_22050_S86_F3/mazurka_h5_22050_S86_F3_epoch29-valloss1.5129.ckpt
+  - /media/datadisk/home/22828187/zhanh/202509_icassp_data/workspaces/mazurka_ckpts/ckpt_baselines/beat_this_ckpt/checkpoints/mazurka_h5_22050_S86_F3/last.ckpt
+
+==== Evaluating /media/datadisk/home/22828187/zhanh/202509_icassp_data/workspaces/mazurka_ckpts/ckpt_baselines/beat_this_ckpt/checkpoints/mazurka_h5_22050_S86_F3/mazurka_h5_22050_S86_F3_epoch29-valloss1.5129.ckpt ====
+Parameters (BeatThis core): trainable=20,251,696 total=20,251,712
+Averaged metrics:
+  F-measure_beat: 0.7180
+  Cemgil_beat: 0.6259
+  CMLt_beat: 0.4205
+  AMLt_beat: 0.4207
+  F-measure_downbeat: 0.2441
+  Cemgil_downbeat: 0.2330
+  CMLt_downbeat: 0.0294
+  AMLt_downbeat: 0.0994
+
+==== Evaluating /media/datadisk/home/22828187/zhanh/202509_icassp_data/workspaces/mazurka_ckpts/ckpt_baselines/beat_this_ckpt/checkpoints/mazurka_h5_22050_S86_F3/last.ckpt ====
+Parameters (BeatThis core): trainable=20,251,696 total=20,251,712
+Averaged metrics:
+  F-measure_beat: 0.6904
+  Cemgil_beat: 0.5924
+  CMLt_beat: 0.3445
+  AMLt_beat: 0.3536
+  F-measure_downbeat: 0.2545
+  Cemgil_downbeat: 0.2490
+  CMLt_downbeat: 0.0523
+  AMLt_downbeat: 0.1440
+
+Saved summary CSV: logs/summary_vienna_sr22050_S86_F3.csv

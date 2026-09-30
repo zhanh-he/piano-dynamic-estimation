@@ -12,16 +12,17 @@ Our proposed multitask model can estimate piano dynamics, change points, beats, 
 To use our model,
 
 1. [Setup python environment](#environment-setup)
-2. [Inference with our pretrain model](#inference-and-checkpoints)
+2. [Download our pretrain model](#download-our-pretrain-model)
+3. [Interface with our pretrained model](#interface-with-our-pretrained-model)
 
 We made a PyTorch implementation of Pampalk’s **PsychoFeatureExtractor**, to provide Bark-scale specific loudness (BSSL) senation based on "Zwicker 1999 method" (yielding a up to 24-dim feature). We found the BSSL outperformed the logMel in our tasks, with a 5x smaller feature size. Find more in
 - [PsychoFeatureExtractor](#psychofeatureextractor)
 
 If want to retrain the model or reproduce our paper results, continue the follow sections.
 
-3. [Download MazurkaBL Dataset](#mazurkabl-dataset)
-4. [Perform Data Preprocessing](#data-preprocessing)
-5. [Training and WandB Report](#training-and-wandb-report)
+4. [Download MazurkaBL Dataset](#mazurkabl-dataset)
+5. [Perform Data Preprocessing](#data-preprocessing)
+6. [Training and WandB Report](#training-and-wandb-report)
 
 You can check our training history in **WandB Report** and **Evaluation Results** on
 - [Evaluation (Ours and Baselines)](#evaluation-ours-and-baselines)
@@ -38,11 +39,28 @@ pip install madmom
 ```
 This environment is for `Ubuntu 22.04 + CUDA 12.2 + RTX3090 24GiB`. Basically it can support upper version, we also tested in `Macbook Pro M4` with the same environment, and `Ubuntu 22.04 + CUDA 12.8 + RTX5090 32GiB` using PyTorch 2.6.
 
-## Inference & Checkpoints
-Add predicted **dynamic markings** to an existing **or** AMT-transcribed score. Start with [`Inference.ipynb`](./Inference.ipynb).
+## Download our pretrain model
+Download our pretrained multi-task, multi-scale checkpoint from this repository and save it under a short local name. This is the model selected for real-world inference under our 5-fold protocol.
 
-- We provide a **pretrained** multi-task, multi-scale checkpoint at `workspaces/checkpoint/` folder. This checkpoint is our **best pre-trained** model under the 5-fold protocol, selected for real-world inference. 
-- More checkpoints (single-task OR ablation variants) are available upon request, or obtained by the training instruction we provided.
+```bash
+mkdir -p workspaces/checkpoints
+curl --fail --location \
+  'https://raw.githubusercontent.com/zhanh-he/piano-dynamic-estimation/3beac7a20ffb0607d57d93c095b00815cd146b88/workspaces/checkpoints/formal%20latent8%20mmoe8%205x5-sone-MultiTaskCNN-%5B%27dynamic%27%2C%20%27change_point%27%2C%20%27beat%27%2C%20%27downbeat%27%5D-fold0/epoch_96_valf1_0.53453.pth' \
+  --output workspaces/checkpoints/pretrained.pth
+```
+
+Expected SHA-256: `2094a56896b2f62b832253c17338908dfad041a72042c938e8afe9f37e43e453`. The same file is also included at [`workspaces/checkpoints/`](./workspaces/checkpoints/) when you clone this repository. More checkpoints (single-task and ablation variants) are available upon request or by following the training instructions below.
+
+## Interface with our pretrained model
+From the repository root, run inference on a WAV or MP3 file:
+
+```bash
+python pytorch/inference.py \
+  --ckpt workspaces/checkpoints/pretrained.pth \
+  --infer_audio /path/to/audio.wav
+```
+
+The command prints the path to an output H5 file containing the predictions. Use the predicted **dynamic markings** with an existing or AMT-transcribed score. For H5 input and a worked example, see [`Inference.ipynb`](./Inference.ipynb).
 
 ## PsychoFeatureExtractor
 We implemented this PsychoFeatureExtractor in PyTorch framwork, according to the [Pampalk’s paper (2002)](https://ofai.at/papers/oefai-tr-2002-30.pdf) and [MATLAB Music Analysis Toolbox (2007)](https://www.pampalk.at/ma/documentation.html). This providing the BSSL in sones, and we compare our PsychoFeatureExtractor results with MoSQITo and MATLAB original, used their total loudness to visualize.
